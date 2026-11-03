@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}[hidden]{display:none!important}</style>
+<title>回合計時器</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="回合計時器">
+<meta name="theme-color" content="#171412">
+<style>
+/* Layout: one column, big clock dial at center, round track below, controls at bottom */
+:root{
+  --bg:#f3f1ee; --surface:#ffffff; --fg:#1f1b18; --muted:#6f6760; --line:#ddd7d0;
+  --work:#d9481f; --rest:#1f8a83; --done:#7a5bd1;
+  --display:"Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+  --body:"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#171412; --surface:#221e1b; --fg:#f2ece6; --muted:#a69c93; --line:#3a332e;
+  --work:#ff6a3d; --rest:#3cc2b8; --done:#a58cff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#171412; --surface:#221e1b; --fg:#f2ece6; --muted:#a69c93; --line:#3a332e;
+  --work:#ff6a3d; --rest:#3cc2b8; --done:#a58cff; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px}
+.wrap{max-width:460px;margin:0 auto;display:flex;flex-direction:column;gap:20px;align-items:stretch}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+h1{font-family:var(--display);font-weight:800;font-size:1.9rem;letter-spacing:.02em;margin:0;text-transform:uppercase}
+.spec{color:var(--muted);font-size:.85rem}
+.dial{position:relative;width:min(100%,340px);aspect-ratio:1;margin:0 auto;max-width:100%}
+.dial svg{width:100%;height:100%;transform:rotate(-90deg)}
+.dial circle{fill:none;stroke-width:14}
+.track{stroke:var(--line)}
+.prog{stroke:var(--accent,var(--work));stroke-linecap:round;transition:stroke .3s}
+.center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.phase{font-weight:700;font-size:1.1rem;letter-spacing:.15em;color:var(--accent,var(--work));padding:4px 14px;border:2px solid currentColor;border-radius:999px}
+.time{font-family:var(--display);font-weight:800;font-size:clamp(4.5rem,24vw,6.5rem);line-height:1;font-variant-numeric:tabular-nums}
+.round{font-size:1rem;color:var(--muted)}
+.round b{color:var(--fg);font-family:var(--display);font-size:1.5rem;font-weight:800}
+.dots{display:grid;grid-template-columns:repeat(10,1fr);gap:6px}
+.dots span{height:10px;border-radius:3px;background:var(--line)}
+.dots span.done{background:var(--work)}
+.dots span.now{background:var(--accent,var(--work));opacity:.55}
+.controls{display:grid;grid-template-columns:1fr 2fr 1fr;gap:10px}
+button{font-family:var(--body);font-size:1rem;font-weight:700;padding:14px 8px;border-radius:12px;border:2px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+button.main{background:var(--accent,var(--work));border-color:transparent;color:#fff;font-size:1.15rem}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent,var(--work));outline-offset:2px}
+button:disabled{opacity:.4;cursor:default}
+details{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+summary{cursor:pointer;font-weight:500;color:var(--muted)}
+.set{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.set label{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--muted)}
+.set input{font:inherit;font-size:1.1rem;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;width:100%;min-width:0;box-sizing:border-box}
+.test{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.test button{font-size:.85rem;padding:8px 12px;font-weight:500}
+.note{font-size:.8rem;color:var(--muted);margin:0;text-align:center}
+@media (prefers-reduced-motion: reduce){.prog{transition:none}}
+</style>
+
+</head>
+<body>
+<div class="wrap" id="app">
+  <header>
+    <h1>Round Timer</h1>
+    <span class="spec" id="spec">5 分運動 + 1 分休息 × 20</span>
+  </header>
+
+  <div class="dial">
+    <svg viewBox="0 0 200 200" aria-hidden="true">
+      <circle class="track" cx="100" cy="100" r="88"/>
+      <circle class="prog" id="prog" cx="100" cy="100" r="88"/>
+    </svg>
+    <div class="center">
+      <span class="phase" id="phase">準備</span>
+      <span class="time" id="time" aria-live="off">05:00</span>
+      <span class="round">第 <b id="rnum">1</b> / <span id="rtot">20</span> 回合</span>
+    </div>
+  </div>
+
+  <div class="dots" id="dots" aria-label="回合進度"></div>
+
+  <div class="controls">
+    <button id="reset" type="button">重設</button>
+    <button id="toggle" class="main" type="button">開始</button>
+    <button id="skip" type="button">跳過</button>
+  </div>
+
+  <details>
+    <summary>設定與音效測試</summary>
+    <div class="set">
+      <label for="w">運動（分）<input id="w" type="number" min="0.5" step="0.5" value="5"></label>
+      <label for="r">休息（分）<input id="r" type="number" min="0" step="0.5" value="1"></label>
+      <label for="n">回合數<input id="n" type="number" min="1" max="99" value="20"></label>
+    </div>
+    <div class="test">
+      <button type="button" id="tStart">試聽：回合開始</button>
+      <button type="button" id="tEnd">試聽：回合結束</button>
+    </div>
+  </details>
+
+  <p class="note">回合開始：高音長鈴。回合結束（進入休息）：低音三響。全部完成會再響一段。螢幕保持亮起時計時最準。</p>
+</div>
+
+<script>
+(()=>{
+const $=id=>document.getElementById(id);
+const C=2*Math.PI*88; $('prog').style.strokeDasharray=C;
+
+let cfg={work:300,rest:60,rounds:20};
+let state={round:1,phase:'ready',left:300,running:false,endAt:0};
+let timer=null, wake=null;
+
+// Sounds are rendered to WAV and played through <audio> elements, which still play when the phone's silent switch is on.
+const SR=22050;
+function wave(type,ph){ const x=ph%1; if(type==='square') return x<.5?1:-1; if(type==='saw') return 2*x-1; if(type==='tri') return 1-4*Math.abs(x-.5); return Math.sin(2*Math.PI*x); }
+function makeWav(notes){
+  const len=Math.ceil(SR*Math.max(...notes.map(n=>n[1]+n[2]))+SR*.1), d=new Float32Array(len);
+  for(const [f,s,dur,type,vol] of notes){ const a=Math.floor(s*SR), n=Math.floor(dur*SR);
+    for(let i=0;i<n;i++){ const t=i/SR, env=Math.min(1,t/.01)*Math.exp(-4.5*t/dur); d[a+i]+=vol*env*wave(type,f*t); } }
+  const buf=new ArrayBuffer(44+len*2), v=new DataView(buf), w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
+  w(0,'RIFF'); v.setUint32(4,36+len*2,true); w(8,'WAVEfmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,SR,true); v.setUint32(28,SR*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,len*2,true);
+  for(let i=0;i<len;i++) v.setInt16(44+i*2,Math.max(-1,Math.min(1,d[i]))*32767,true);
+  let bin=''; const u=new Uint8Array(buf); for(let i=0;i<u.length;i+=8192) bin+=String.fromCharCode.apply(null,u.subarray(i,i+8192));
+  const el=new Audio('data:audio/wav;base64,'+btoa(bin)); el.preload='auto'; return el;
+}
+const NOTES={
+  start:[[880,0,.25,'square',.3],[880,.3,.25,'square',.3],[1320,.6,1.4,'tri',.8]],
+  end:[[440,0,.4,'saw',.45],[440,.45,.4,'saw',.45],[440,.9,.5,'saw',.45]],
+  done:[[523,0,.6,'tri',.6],[659,.2,.6,'tri',.6],[784,.4,.6,'tri',.6],[1047,.6,1.8,'tri',.7]]
+};
+const VIB={start:[300,100,300,100,600],end:[200,150,200,150,200],done:[500,200,500,200,800]};
+const S={}; for(const k in NOTES) S[k]=makeWav(NOTES[k]);
+let ctx=null, unlocked=false;
+// Backup path: Web Audio, used when an <audio> element refuses to play.
+function webTone(notes){
+  try{ if(!ctx) return; if(ctx.state==='suspended') ctx.resume();
+    const T={tri:'triangle',saw:'sawtooth',square:'square',sine:'sine'};
+    for(const [f,s,dur,type,vol] of notes){ const o=ctx.createOscillator(), g=ctx.createGain(), t=ctx.currentTime+s;
+      o.type=T[type]; o.frequency.value=f; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol*.6,t+.01); g.gain.exponentialRampToValueAtTime(.001,t+dur);
+      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t+dur+.05); }
+  }catch(e){}
+}
+function audio(){ // call inside a tap so the phone lets sounds play later
+  try{ if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)(); if(ctx.state==='suspended') ctx.resume(); }catch(e){}
+  if(unlocked) return; unlocked=true;
+  Object.values(S).forEach(el=>{ if(el._want) return; el.muted=true; const p=el.play();
+    const done=()=>{ if(!el._want){ el.pause(); el.currentTime=0; } el.muted=false; };
+    if(p) p.then(done).catch(()=>{ el.muted=false; }); else done(); });
+}
+function play(k){
+  const el=S[k]; el._want=true;
+  try{ navigator.vibrate&&navigator.vibrate(VIB[k]); }catch(e){}
+  try{ el.pause(); el.muted=false; el.currentTime=0; const p=el.play();
+    if(p) p.catch(()=>webTone(NOTES[k]));
+  }catch(e){ webTone(NOTES[k]); }
+  el.onended=()=>{ el._want=false; };
+}
+const soundStart=()=>play('start');
+const soundEnd=()=>play('end');
+const soundDone=()=>play('done');
+
+const fmt=s=>{ s=Math.max(0,Math.ceil(s)); return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); };
+
+function buildDots(){ const d=$('dots'); d.innerHTML=''; d.style.gridTemplateColumns=`repeat(${Math.min(10,cfg.rounds)},1fr)`; for(let i=0;i<cfg.rounds;i++) d.appendChild(document.createElement('span')); }
+
+function render(){
+  const p=state.phase, root=$('app');
+  const accent = p==='rest' ? 'var(--rest)' : p==='done' ? 'var(--done)' : 'var(--work)';
+  document.documentElement.style.setProperty('--accent',accent);
+  $('phase').textContent={ready:'準備',work:'運動',rest:'休息',done:'完成'}[p];
+  $('time').textContent=fmt(state.left);
+  $('rnum').textContent=state.round; $('rtot').textContent=cfg.rounds;
+  const total = p==='rest'?cfg.rest : cfg.work;
+  const frac = p==='done'?1 : p==='ready'?0 : 1-state.left/total;
+  $('prog').style.strokeDashoffset=C*(1-frac);
+  [...$('dots').children].forEach((el,i)=>{ el.className = (i<state.round-1 || p==='done' || (i===state.round-1 && p==='rest'))?'done': (i===state.round-1 && p==='work')?'now':''; });
+  $('toggle').textContent = p==='done'?'再來一次': state.running?'暫停': p==='ready'?'開始':'繼續';
+  $('skip').disabled = p==='ready'||p==='done';
+  $('spec').textContent=`${cfg.work/60} 分運動 + ${cfg.rest/60} 分休息 × ${cfg.rounds}`;
+  document.title=(p==='work'||p==='rest')?`${fmt(state.left)} ${p==='work'?'運動':'休息'} ${state.round}/${cfg.rounds}`:'回合計時器';
+}
+
+function startPhase(phase){
+  state.phase=phase; state.left = phase==='work'?cfg.work:cfg.rest; state.endAt=performance.now()+state.left*1000;
+}
+function next(){
+  if(state.phase==='work'){
+    soundEnd();
+    if(state.round>=cfg.rounds){ finish(); return; }
+    if(cfg.rest>0){ startPhase('rest'); return; }
+    state.round++; startPhase('work'); setTimeout(soundStart,1500); return;
+  }
+  if(state.phase==='rest'){ state.round++; startPhase('work'); soundStart(); }
+}
+function finish(){ state.phase='done'; state.left=0; stop(); setTimeout(soundDone,1500); render(); }
+
+function tick(){
+  if(!state.running) return;
+  state.left=(state.endAt-performance.now())/1000;
+  if(state.left<=0) next();
+  render();
+}
+async function keepAwake(){ try{ if('wakeLock' in navigator) wake=await navigator.wakeLock.request('screen'); }catch(e){} }
+function run(){ state.running=true; state.endAt=performance.now()+state.left*1000; timer=setInterval(tick,200); keepAwake(); }
+function stop(){ state.running=false; clearInterval(timer); try{wake&&wake.release();}catch(e){} wake=null; }
+
+function readCfg(){
+  const w=parseFloat($('w').value), r=parseFloat($('r').value), n=parseInt($('n').value,10);
+  cfg.work=Math.max(30,Math.round((isNaN(w)?5:w)*60)); cfg.rest=Math.max(0,Math.round((isNaN(r)?1:r)*60)); cfg.rounds=Math.min(99,Math.max(1,isNaN(n)?20:n));
+}
+function reset(){ stop(); readCfg(); state={round:1,phase:'ready',left:cfg.work,running:false,endAt:0}; buildDots(); render(); }
+
+$('toggle').addEventListener('click',()=>{
+  audio();
+  if(state.phase==='done'){ reset(); }
+  if(state.phase==='ready'){ startPhase('work'); setTimeout(soundStart,150); run(); }
+  else if(state.running){ stop(); }
+  else run();
+  render();
+});
+$('reset').addEventListener('click',reset);
+$('skip').addEventListener('click',()=>{ if(state.phase==='work'||state.phase==='rest'){ next(); if(state.running) state.endAt=performance.now()+state.left*1000; render(); } });
+['w','r','n'].forEach(id=>$(id).addEventListener('change',()=>{ if(state.phase==='ready'||state.phase==='done') reset(); }));
+$('tStart').addEventListener('click',()=>{ audio(); setTimeout(soundStart,150); });
+$('tEnd').addEventListener('click',()=>{ audio(); setTimeout(soundEnd,150); });
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&state.running) keepAwake(); });
+
+reset();
+})();
+</script>
+
+<script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}</script>
+</body>
+</html>
