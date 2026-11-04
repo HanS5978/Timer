@@ -158,7 +158,7 @@ function makeWav(notes){
   v.setUint32(24,SR,true); v.setUint32(28,SR*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,len*2,true);
   for(let i=0;i<len;i++){ const q=Math.round(Math.max(-1,Math.min(1,d[i]))*63)/63; v.setInt16(44+i*2,q*32767,true); } // crush to ~7-bit
   let bin=''; const u=new Uint8Array(buf); for(let i=0;i<u.length;i+=8192) bin+=String.fromCharCode.apply(null,u.subarray(i,i+8192));
-  const el=new Audio('data:audio/wav;base64,'+btoa(bin)); el.preload='auto'; return el;
+  return 'data:audio/wav;base64,'+btoa(bin);
 }
 const seq=(freqs,start,step,type,vol,last)=>freqs.map((f,i)=>[f,start+i*step,(i===freqs.length-1&&last)?last:step*.92,type,vol]);
 const NOTES={
@@ -183,8 +183,10 @@ const NOTES={
   ]
 };
 const VIB={start:[300,100,300,100,600],end:[200,150,200,150,200],done:[500,200,500,200,800]};
-const S={}; for(const k in NOTES) S[k]=makeWav(NOTES[k]);
-let ctx=null, unlocked=false;
+const URLS={}; for(const k in NOTES) URLS[k]=makeWav(NOTES[k]);
+// One shared player: only one sound can play at a time, and the first tap plays the real sound (no silent priming).
+const player=new Audio(); player.preload='auto';
+let ctx=null;
 // Backup path: Web Audio, used when an <audio> element refuses to play.
 function webTone(notes){
   try{ if(!ctx) return; if(ctx.state==='suspended') ctx.resume();
@@ -197,18 +199,12 @@ function webTone(notes){
 }
 function audio(){ // call inside a tap so the phone lets sounds play later
   try{ if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)(); if(ctx.state==='suspended') ctx.resume(); }catch(e){}
-  if(unlocked) return; unlocked=true;
-  Object.values(S).forEach(el=>{ if(el._want) return; el.muted=true; const p=el.play();
-    const done=()=>{ if(!el._want){ el.pause(); el.currentTime=0; } el.muted=false; };
-    if(p) p.then(done).catch(()=>{ el.muted=false; }); else done(); });
 }
 function play(k){
-  const el=S[k]; el._want=true;
   try{ navigator.vibrate&&navigator.vibrate(VIB[k]); }catch(e){}
-  try{ el.pause(); el.muted=false; el.currentTime=0; const p=el.play();
+  try{ player.pause(); player.src=URLS[k]; const p=player.play();
     if(p) p.catch(()=>webTone(NOTES[k]));
   }catch(e){ webTone(NOTES[k]); }
-  el.onended=()=>{ el._want=false; };
 }
 const soundStart=()=>play('start');
 const soundEnd=()=>play('end');
@@ -282,7 +278,7 @@ function setMode(m){ if(state.phase==='work'||state.phase==='rest') return; mode
 $('toggle').addEventListener('click',()=>{
   audio();
   if(state.phase==='done'){ reset(); }
-  if(state.phase==='ready'){ startPhase('work'); setTimeout(soundStart,150); run(); }
+  if(state.phase==='ready'){ startPhase('work'); soundStart(); run(); }
   else if(state.running){ stop(); }
   else run();
   render();
@@ -293,9 +289,9 @@ $('mLong').addEventListener('click',()=>setMode('long'));
 $('mShort').addEventListener('click',()=>setMode('short'));
 ['w','r','n'].forEach(id=>$(id).addEventListener('change',()=>{ if(state.phase==='ready'||state.phase==='done'){ readCfg(); reset(); } else fillInputs(); }));
 $('defaults').addEventListener('click',()=>{ if(state.phase==='work'||state.phase==='rest') return; Object.assign(cfg,DEFAULTS[mode]); save(); reset(); });
-$('tStart').addEventListener('click',()=>{ audio(); setTimeout(soundStart,150); });
-$('tEnd').addEventListener('click',()=>{ audio(); setTimeout(soundEnd,150); });
-$('tDone').addEventListener('click',()=>{ audio(); setTimeout(soundDone,150); });
+$('tStart').addEventListener('click',()=>{ audio(); soundStart(); });
+$('tEnd').addEventListener('click',()=>{ audio(); soundEnd(); });
+$('tDone').addEventListener('click',()=>{ audio(); soundDone(); });
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&state.running) keepAwake(); });
 
 reset();
