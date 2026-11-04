@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-title" content="回合計時器">
 <meta name="theme-color" content="#171412">
 <style>
-/* Layout: one column, big clock dial at center, round track below, controls at bottom */
+/* Layout: one column — mode switch, big clock dial, round track, controls, settings */
 :root{
   --bg:#f3f1ee; --surface:#ffffff; --fg:#1f1b18; --muted:#6f6760; --line:#ddd7d0;
   --work:#d9481f; --rest:#1f8a83; --done:#7a5bd1;
@@ -29,11 +29,17 @@
 html,body{height:100%}
 body{background:var(--bg);color:var(--fg);font-family:var(--body);
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px}
-.wrap{max-width:460px;margin:0 auto;display:flex;flex-direction:column;gap:20px;align-items:stretch}
-header{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.wrap{max-width:460px;margin:0 auto;display:flex;flex-direction:column;gap:18px;align-items:stretch}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
 h1{font-family:var(--display);font-weight:800;font-size:1.9rem;letter-spacing:.02em;margin:0;text-transform:uppercase}
 .spec{color:var(--muted);font-size:.85rem}
-.dial{position:relative;width:min(100%,340px);aspect-ratio:1;margin:0 auto;max-width:100%}
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mode{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:10px 12px}
+.mode b{font-size:1rem}
+.mode span{font-size:.78rem;font-weight:400;color:var(--muted)}
+.mode[aria-pressed="true"]{border-color:var(--work);background:color-mix(in srgb,var(--work) 12%,var(--surface))}
+.mode[aria-pressed="true"] b{color:var(--work)}
+.dial{position:relative;width:min(100%,320px);aspect-ratio:1;margin:0 auto;max-width:100%}
 .dial svg{width:100%;height:100%;transform:rotate(-90deg)}
 .dial circle{fill:none;stroke-width:14}
 .track{stroke:var(--line)}
@@ -44,7 +50,9 @@ h1{font-family:var(--display);font-weight:800;font-size:1.9rem;letter-spacing:.0
 .round{font-size:1rem;color:var(--muted)}
 .round b{color:var(--fg);font-family:var(--display);font-size:1.5rem;font-weight:800}
 .dots{display:grid;grid-template-columns:repeat(10,1fr);gap:6px}
+.dots.many{gap:4px}
 .dots span{height:10px;border-radius:3px;background:var(--line)}
+.dots.many span{height:7px;border-radius:2px}
 .dots span.done{background:var(--work)}
 .dots span.now{background:var(--accent,var(--work));opacity:.55}
 .controls{display:grid;grid-template-columns:1fr 2fr 1fr;gap:10px}
@@ -71,6 +79,11 @@ summary{cursor:pointer;font-weight:500;color:var(--muted)}
     <span class="spec" id="spec">5 分運動 + 1 分休息 × 20</span>
   </header>
 
+  <div class="modes" aria-label="模式">
+    <button class="mode" type="button" id="mLong" data-mode="long" aria-pressed="true"><b>長回合</b><span id="mLongSub">5 分 + 休 1 分 × 20</span></button>
+    <button class="mode" type="button" id="mShort" data-mode="short" aria-pressed="false"><b>短間歇</b><span id="mShortSub">30 秒 + 休 5 秒 × 100</span></button>
+  </div>
+
   <div class="dial">
     <svg viewBox="0 0 200 200" aria-hidden="true">
       <circle class="track" cx="100" cy="100" r="88"/>
@@ -94,17 +107,19 @@ summary{cursor:pointer;font-weight:500;color:var(--muted)}
   <details>
     <summary>設定與音效測試</summary>
     <div class="set">
-      <label for="w">運動（分）<input id="w" type="number" min="0.5" step="0.5" value="5"></label>
-      <label for="r">休息（分）<input id="r" type="number" min="0" step="0.5" value="1"></label>
-      <label for="n">回合數<input id="n" type="number" min="1" max="99" value="20"></label>
+      <label for="w">運動（秒）<input id="w" type="number" min="5" step="5" value="300"></label>
+      <label for="r">休息（秒）<input id="r" type="number" min="0" step="5" value="60"></label>
+      <label for="n">回合數<input id="n" type="number" min="1" max="200" value="20"></label>
     </div>
     <div class="test">
-      <button type="button" id="tStart">試聽：回合開始</button>
-      <button type="button" id="tEnd">試聽：回合結束</button>
+      <button type="button" id="tStart">試聽：開始</button>
+      <button type="button" id="tEnd">試聽：休息</button>
+      <button type="button" id="tDone">試聽：完成</button>
+      <button type="button" id="defaults">恢復此模式預設</button>
     </div>
   </details>
 
-  <p class="note">回合開始：高音長鈴。回合結束（進入休息）：低音三響。全部完成會再響一段。螢幕保持亮起時計時最準。</p>
+  <p class="note">8-bit 音效：回合開始是上升的「升級音」，進入休息是下降音，全部完成會播一段勝利旋律。計時中無法切換模式，請先按「重設」。</p>
 </div>
 
 <script>
@@ -112,28 +127,60 @@ summary{cursor:pointer;font-weight:500;color:var(--muted)}
 const $=id=>document.getElementById(id);
 const C=2*Math.PI*88; $('prog').style.strokeDasharray=C;
 
-let cfg={work:300,rest:60,rounds:20};
-let state={round:1,phase:'ready',left:300,running:false,endAt:0};
+const DEFAULTS={ long:{work:300,rest:60,rounds:20}, short:{work:30,rest:5,rounds:100} };
+let saved={}; try{ saved=JSON.parse(localStorage.getItem('roundTimerModes')||'{}')||{}; }catch(e){ saved={}; }
+const MODES={ long:Object.assign({},DEFAULTS.long,saved.long), short:Object.assign({},DEFAULTS.short,saved.short) };
+let mode='long'; try{ const m=localStorage.getItem('roundTimerMode'); if(m==='short'||m==='long') mode=m; }catch(e){}
+let cfg=MODES[mode];
+let state={round:1,phase:'ready',left:cfg.work,running:false,endAt:0};
 let timer=null, wake=null;
 
-// Sounds are rendered to WAV and played through <audio> elements, which still play when the phone's silent switch is on.
+// ---- 8-bit sounds: pulse / triangle / noise channels rendered to WAV, played through <audio> (works with the silent switch on)
 const SR=22050;
-function wave(type,ph){ const x=ph%1; if(type==='square') return x<.5?1:-1; if(type==='saw') return 2*x-1; if(type==='tri') return 1-4*Math.abs(x-.5); return Math.sin(2*Math.PI*x); }
+let noiseSeed=1;
+function wave(type,ph){
+  const x=ph%1;
+  if(type==='p12') return x<.125?1:-1;
+  if(type==='p25') return x<.25?1:-1;
+  if(type==='p50') return x<.5?1:-1;
+  if(type==='tri'){ const t=1-4*Math.abs(x-.5); return Math.round(t*7.5)/7.5; } // 4-bit stepped triangle
+  if(type==='noise'){ noiseSeed=(noiseSeed*1103515245+12345)&0x7fffffff; return (noiseSeed/0x3fffffff)-1; }
+  return Math.sin(2*Math.PI*x);
+}
 function makeWav(notes){
   const len=Math.ceil(SR*Math.max(...notes.map(n=>n[1]+n[2]))+SR*.1), d=new Float32Array(len);
   for(const [f,s,dur,type,vol] of notes){ const a=Math.floor(s*SR), n=Math.floor(dur*SR);
-    for(let i=0;i<n;i++){ const t=i/SR, env=Math.min(1,t/.01)*Math.exp(-4.5*t/dur); d[a+i]+=vol*env*wave(type,f*t); } }
+    for(let i=0;i<n;i++){ const t=i/SR, rel=dur-t;
+      const env=Math.min(1,t/.004)*Math.min(1,rel/.02)*(type==='noise'?Math.exp(-12*t):1);
+      d[a+i]+=vol*env*wave(type,f*t); } }
   const buf=new ArrayBuffer(44+len*2), v=new DataView(buf), w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
   w(0,'RIFF'); v.setUint32(4,36+len*2,true); w(8,'WAVEfmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
   v.setUint32(24,SR,true); v.setUint32(28,SR*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,len*2,true);
-  for(let i=0;i<len;i++) v.setInt16(44+i*2,Math.max(-1,Math.min(1,d[i]))*32767,true);
+  for(let i=0;i<len;i++){ const q=Math.round(Math.max(-1,Math.min(1,d[i]))*63)/63; v.setInt16(44+i*2,q*32767,true); } // crush to ~7-bit
   let bin=''; const u=new Uint8Array(buf); for(let i=0;i<u.length;i+=8192) bin+=String.fromCharCode.apply(null,u.subarray(i,i+8192));
   const el=new Audio('data:audio/wav;base64,'+btoa(bin)); el.preload='auto'; return el;
 }
+const seq=(freqs,start,step,type,vol,last)=>freqs.map((f,i)=>[f,start+i*step,(i===freqs.length-1&&last)?last:step*.92,type,vol]);
 const NOTES={
-  start:[[880,0,.25,'square',.3],[880,.3,.25,'square',.3],[1320,.6,1.4,'tri',.8]],
-  end:[[440,0,.4,'saw',.45],[440,.45,.4,'saw',.45],[440,.9,.5,'saw',.45]],
-  done:[[523,0,.6,'tri',.6],[659,.2,.6,'tri',.6],[784,.4,.6,'tri',.6],[1047,.6,1.8,'tri',.7]]
+  // rising power-up arpeggio, then a held high note
+  start:[
+    ...seq([523,659,784,1047,659,784,1047,1319],0,.065,'p25',.32),
+    [1568,.52,.42,'p25',.32],[784,.52,.42,'p50',.14],
+    [131,0,.94,'tri',.5],[1,0,.06,'noise',.35]
+  ],
+  // falling "rest" phrase
+  end:[
+    ...seq([1568,1319,1047,784],0,.09,'p50',.28),
+    [523,.38,.18,'p50',.28],[392,.6,.42,'p50',.28],
+    [196,.38,.64,'tri',.55],[1,0,.05,'noise',.3],[1,.38,.05,'noise',.3]
+  ],
+  // short victory tune for the last round
+  done:[
+    ...seq([523,659,784],0,.1,'p25',.3),[1047,.3,.22,'p25',.3],
+    ...seq([880,988],.56,.1,'p25',.3),[1047,.78,.7,'p25',.3],
+    ...seq([330,392,523],0,.1,'p12',.16),[659,.3,.22,'p12',.16],[784,.78,.7,'p12',.16],
+    [131,0,.52,'tri',.5],[175,.56,.2,'tri',.5],[262,.78,.7,'tri',.5]
+  ]
 };
 const VIB={start:[300,100,300,100,600],end:[200,150,200,150,200],done:[500,200,500,200,800]};
 const S={}; for(const k in NOTES) S[k]=makeWav(NOTES[k]);
@@ -141,10 +188,11 @@ let ctx=null, unlocked=false;
 // Backup path: Web Audio, used when an <audio> element refuses to play.
 function webTone(notes){
   try{ if(!ctx) return; if(ctx.state==='suspended') ctx.resume();
-    const T={tri:'triangle',saw:'sawtooth',square:'square',sine:'sine'};
-    for(const [f,s,dur,type,vol] of notes){ const o=ctx.createOscillator(), g=ctx.createGain(), t=ctx.currentTime+s;
-      o.type=T[type]; o.frequency.value=f; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol*.6,t+.01); g.gain.exponentialRampToValueAtTime(.001,t+dur);
-      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t+dur+.05); }
+    const T={p12:'square',p25:'square',p50:'square',tri:'triangle',sine:'sine'};
+    for(const [f,s,dur,type,vol] of notes){ if(type==='noise') continue;
+      const o=ctx.createOscillator(), g=ctx.createGain(), t=ctx.currentTime+s;
+      o.type=T[type]||'square'; o.frequency.value=f; g.gain.setValueAtTime(vol*.5,t); g.gain.setValueAtTime(vol*.5,t+dur-.02); g.gain.linearRampToValueAtTime(0,t+dur);
+      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t+dur+.02); }
   }catch(e){}
 }
 function audio(){ // call inside a tap so the phone lets sounds play later
@@ -166,12 +214,18 @@ const soundStart=()=>play('start');
 const soundEnd=()=>play('end');
 const soundDone=()=>play('done');
 
+// ---- timer
 const fmt=s=>{ s=Math.max(0,Math.ceil(s)); return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); };
+const dur=s=> s>=60 ? (s%60 ? `${Math.floor(s/60)} 分 ${s%60} 秒` : `${s/60} 分`) : `${s} 秒`;
 
-function buildDots(){ const d=$('dots'); d.innerHTML=''; d.style.gridTemplateColumns=`repeat(${Math.min(10,cfg.rounds)},1fr)`; for(let i=0;i<cfg.rounds;i++) d.appendChild(document.createElement('span')); }
-
+function buildDots(){
+  const d=$('dots'); d.innerHTML='';
+  d.classList.toggle('many',cfg.rounds>30);
+  d.style.gridTemplateColumns=`repeat(${Math.min(10,cfg.rounds)},1fr)`;
+  for(let i=0;i<cfg.rounds;i++) d.appendChild(document.createElement('span'));
+}
 function render(){
-  const p=state.phase, root=$('app');
+  const p=state.phase;
   const accent = p==='rest' ? 'var(--rest)' : p==='done' ? 'var(--done)' : 'var(--work)';
   document.documentElement.style.setProperty('--accent',accent);
   $('phase').textContent={ready:'準備',work:'運動',rest:'休息',done:'完成'}[p];
@@ -183,23 +237,25 @@ function render(){
   [...$('dots').children].forEach((el,i)=>{ el.className = (i<state.round-1 || p==='done' || (i===state.round-1 && p==='rest'))?'done': (i===state.round-1 && p==='work')?'now':''; });
   $('toggle').textContent = p==='done'?'再來一次': state.running?'暫停': p==='ready'?'開始':'繼續';
   $('skip').disabled = p==='ready'||p==='done';
-  $('spec').textContent=`${cfg.work/60} 分運動 + ${cfg.rest/60} 分休息 × ${cfg.rounds}`;
-  document.title=(p==='work'||p==='rest')?`${fmt(state.left)} ${p==='work'?'運動':'休息'} ${state.round}/${cfg.rounds}`:'回合計時器';
+  $('spec').textContent=`${dur(cfg.work)}運動 + ${dur(cfg.rest)}休息 × ${cfg.rounds}`;
+  $('mLongSub').textContent=`${dur(MODES.long.work)} + 休 ${dur(MODES.long.rest)} × ${MODES.long.rounds}`;
+  $('mShortSub').textContent=`${dur(MODES.short.work)} + 休 ${dur(MODES.short.rest)} × ${MODES.short.rounds}`;
+  const busy = p==='work'||p==='rest';
+  ['mLong','mShort'].forEach(id=>{ const b=$(id); b.setAttribute('aria-pressed',b.dataset.mode===mode); b.disabled=busy && b.dataset.mode!==mode; });
+  document.title=busy?`${fmt(state.left)} ${p==='work'?'運動':'休息'} ${state.round}/${cfg.rounds}`:'回合計時器';
 }
 
-function startPhase(phase){
-  state.phase=phase; state.left = phase==='work'?cfg.work:cfg.rest; state.endAt=performance.now()+state.left*1000;
-}
+function startPhase(phase){ state.phase=phase; state.left = phase==='work'?cfg.work:cfg.rest; state.endAt=performance.now()+state.left*1000; }
 function next(){
   if(state.phase==='work'){
-    soundEnd();
     if(state.round>=cfg.rounds){ finish(); return; }
+    soundEnd();
     if(cfg.rest>0){ startPhase('rest'); return; }
-    state.round++; startPhase('work'); setTimeout(soundStart,1500); return;
+    state.round++; startPhase('work'); setTimeout(soundStart,1100); return;
   }
   if(state.phase==='rest'){ state.round++; startPhase('work'); soundStart(); }
 }
-function finish(){ state.phase='done'; state.left=0; stop(); setTimeout(soundDone,1500); render(); }
+function finish(){ state.phase='done'; state.left=0; stop(); soundDone(); render(); }
 
 function tick(){
   if(!state.running) return;
@@ -208,14 +264,20 @@ function tick(){
   render();
 }
 async function keepAwake(){ try{ if('wakeLock' in navigator) wake=await navigator.wakeLock.request('screen'); }catch(e){} }
-function run(){ state.running=true; state.endAt=performance.now()+state.left*1000; timer=setInterval(tick,200); keepAwake(); }
+function run(){ state.running=true; state.endAt=performance.now()+state.left*1000; clearInterval(timer); timer=setInterval(tick,200); keepAwake(); }
 function stop(){ state.running=false; clearInterval(timer); try{wake&&wake.release();}catch(e){} wake=null; }
 
+function save(){ try{ localStorage.setItem('roundTimerModes',JSON.stringify(MODES)); localStorage.setItem('roundTimerMode',mode); }catch(e){} }
+function fillInputs(){ $('w').value=cfg.work; $('r').value=cfg.rest; $('n').value=cfg.rounds; }
 function readCfg(){
-  const w=parseFloat($('w').value), r=parseFloat($('r').value), n=parseInt($('n').value,10);
-  cfg.work=Math.max(30,Math.round((isNaN(w)?5:w)*60)); cfg.rest=Math.max(0,Math.round((isNaN(r)?1:r)*60)); cfg.rounds=Math.min(99,Math.max(1,isNaN(n)?20:n));
+  const w=parseInt($('w').value,10), r=parseInt($('r').value,10), n=parseInt($('n').value,10);
+  cfg.work=Math.max(5,isNaN(w)?DEFAULTS[mode].work:w);
+  cfg.rest=Math.max(0,isNaN(r)?DEFAULTS[mode].rest:r);
+  cfg.rounds=Math.min(200,Math.max(1,isNaN(n)?DEFAULTS[mode].rounds:n));
+  save();
 }
-function reset(){ stop(); readCfg(); state={round:1,phase:'ready',left:cfg.work,running:false,endAt:0}; buildDots(); render(); }
+function reset(){ stop(); state={round:1,phase:'ready',left:cfg.work,running:false,endAt:0}; buildDots(); fillInputs(); render(); }
+function setMode(m){ if(state.phase==='work'||state.phase==='rest') return; mode=m; cfg=MODES[m]; save(); reset(); }
 
 $('toggle').addEventListener('click',()=>{
   audio();
@@ -226,10 +288,14 @@ $('toggle').addEventListener('click',()=>{
   render();
 });
 $('reset').addEventListener('click',reset);
-$('skip').addEventListener('click',()=>{ if(state.phase==='work'||state.phase==='rest'){ next(); if(state.running) state.endAt=performance.now()+state.left*1000; render(); } });
-['w','r','n'].forEach(id=>$(id).addEventListener('change',()=>{ if(state.phase==='ready'||state.phase==='done') reset(); }));
+$('skip').addEventListener('click',()=>{ if(state.phase==='work'||state.phase==='rest'){ next(); render(); } });
+$('mLong').addEventListener('click',()=>setMode('long'));
+$('mShort').addEventListener('click',()=>setMode('short'));
+['w','r','n'].forEach(id=>$(id).addEventListener('change',()=>{ if(state.phase==='ready'||state.phase==='done'){ readCfg(); reset(); } else fillInputs(); }));
+$('defaults').addEventListener('click',()=>{ if(state.phase==='work'||state.phase==='rest') return; Object.assign(cfg,DEFAULTS[mode]); save(); reset(); });
 $('tStart').addEventListener('click',()=>{ audio(); setTimeout(soundStart,150); });
 $('tEnd').addEventListener('click',()=>{ audio(); setTimeout(soundEnd,150); });
+$('tDone').addEventListener('click',()=>{ audio(); setTimeout(soundDone,150); });
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&state.running) keepAwake(); });
 
 reset();
